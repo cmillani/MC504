@@ -7,7 +7,8 @@
 //
 
 //TODO ---->>>>Botar mutex nos bits da bitmask, fazer batman, controle dos sinais
-//TODO ---->>>>Mutex para fim da fila
+//TODO ---->>>>Mutex para fim da fila, liberar nos alocados
+//TODO ---->>>>Verificar ordem dos mutexes, grau de poder, sei la, hierarquia?
 
 //----------------------------------------------------------------------
 //                      Bibliotecas
@@ -97,36 +98,36 @@ int main(int argc, const char * argv[]) {
                 insereFila(&NorteFila, i);
 				pthread_cond_init(&(NorteFila.ultimoNo->condition), NULL);
 				pthread_create(&(NorteFila.ultimoNo->bat),NULL,northBat,(void *) NorteFila.ultimoNo);
-				busy_mask |= NORTH; /////Condition to wake -> escreve mas nao le
-				pthread_mutex_unlock(&NorteFila.fim_da_fila);
+				busy_mask |= NORTH;
 				pthread_mutex_unlock(&mask_mutex);
+				pthread_mutex_unlock(&NorteFila.fim_da_fila);
                 break;
 			}
 			case 'e': {
 				insereFila(&LesteFila, i);
-				pthread_cond_init(&(NorteFila.ultimoNo->condition), NULL);
+				pthread_cond_init(&(LesteFila.ultimoNo->condition), NULL);
 				pthread_create(&(LesteFila.ultimoNo->bat),NULL,eastBat,(void *) LesteFila.ultimoNo);
 				busy_mask |= EAST;
-				pthread_mutex_unlock(&LesteFila.fim_da_fila);
 				pthread_mutex_unlock(&mask_mutex);
+				pthread_mutex_unlock(&LesteFila.fim_da_fila);
 				break;
 			}
 			case 's': {
 				insereFila(&SulFila, i);
-				pthread_cond_init(&(NorteFila.ultimoNo->condition), NULL);
+				pthread_cond_init(&(SulFila.ultimoNo->condition), NULL);
 				pthread_create(&(SulFila.ultimoNo->bat),NULL,southBat,(void *) SulFila.ultimoNo);
 				busy_mask |= SOUTH;
-				pthread_mutex_unlock(&SulFila.fim_da_fila);
 				pthread_mutex_unlock(&mask_mutex);
+				pthread_mutex_unlock(&SulFila.fim_da_fila);
 				break;
 			}
 			case 'w': {
 				insereFila(&OesteFila, i);
-				pthread_cond_init(&(NorteFila.ultimoNo->condition), NULL);
+				pthread_cond_init(&(OesteFila.ultimoNo->condition), NULL);
 				pthread_create(&(OesteFila.ultimoNo->bat),NULL,westBat,(void *) OesteFila.ultimoNo);
 				busy_mask |= WEST;
-				pthread_mutex_unlock(&OesteFila.fim_da_fila);
 				pthread_mutex_unlock(&mask_mutex);
+				pthread_mutex_unlock(&OesteFila.fim_da_fila);
 				break;
 			}
 			
@@ -164,7 +165,7 @@ void *northBat(void * tid)
 	
 	//if (LIMITE);//Condicao para chamar BATMAN ->>>Implementar!
 	
-	printf("BAT %d N saiu no cruzamento\n", thisBat->id); 
+	printf("BAT %d N saiu no cruzamento\n", thisBat->id);
 	pthread_mutex_lock(&NorteFila.fim_da_fila);
 	NorteFila.tamanho--;
 	NorteFila.primeiroNo = thisBat->prox;
@@ -174,16 +175,30 @@ void *northBat(void * tid)
 	}
 	else//caso onde esse eh o ultimo no da fila
 	{
-		//lembrar de chamar proxima fila
-		pthread_mutex_lock(&mask_mutex);
+		pthread_mutex_lock(&mask_mutex); //Acredito que seja desnecessario, conferir
 		busy_mask &= ~NORTH;
 		pthread_mutex_unlock(&mask_mutex);
-	}
 		
+		//lembrar de chamar proxima fila
+		if (LesteFila.primeiroNo != NULL)
+		{
+			pthread_cond_broadcast(&LesteFila.primeiroNo->condition);
+		}
+		else if (SulFila.primeiroNo != NULL)
+		{
+			pthread_cond_broadcast(&SulFila.primeiroNo->condition);
+		}
+		else if (OesteFila.primeiroNo != NULL)
+		{
+			pthread_cond_broadcast(&OesteFila.primeiroNo->condition);
+		}
+		
+	}
 	pthread_mutex_unlock(&NorteFila.fim_da_fila);
 	
 	
 	pthread_mutex_unlock(&cruzamento);	
+	
 	pthread_mutex_unlock(&NorteFila.alteraFila);//Terminou de mexer na fila
 	
 	return NULL;
@@ -201,13 +216,13 @@ void *southBat(void * tid)
 	
 	printf("BAT %d S chegou no cruzamento\n", thisBat->id); //Informa que o BAT chegou no cruzamento
 	
-	//Aqui eu testo se ele deve prosseguir cruzamento, checar bit mask
-	check: //gambi para testes
+	//check: //gambi para testes
 	pthread_mutex_lock(&mask_mutex);
-	if (busy_mask & ~(SOUTH | WEST))
+	if (busy_mask & ~(SOUTH | WEST)) //Ver se da pra trocar por while
 	{
-		pthread_mutex_unlock(&mask_mutex);
-		goto check;
+		pthread_cond_wait(&thisBat->condition, &mask_mutex);
+		//pthread_mutex_unlock(&mask_mutex);
+		//goto check;
 	}
 	pthread_mutex_unlock(&mask_mutex);
 	
@@ -229,6 +244,11 @@ void *southBat(void * tid)
 		pthread_mutex_lock(&mask_mutex);
 		busy_mask &= ~SOUTH;
 		pthread_mutex_unlock(&mask_mutex);
+		
+		if (OesteFila.primeiroNo != NULL)
+		{
+			pthread_cond_broadcast(&OesteFila.primeiroNo->condition);
+		}
 	}
 		
 	pthread_mutex_unlock(&SulFila.fim_da_fila);
@@ -243,6 +263,53 @@ void *westBat(void * tid)
 {
 	Fila * thisBat = (Fila *) tid; //Pega referencia do noh desse BAT
 	
+	pthread_mutex_lock(&OesteFila.alteraFila); //Mutex para acesso a fila do norte, verifica posicao
+	
+	while (OesteFila.primeiroNo != thisBat) //Se nao for o primeiro noh espera ser chamado ->while garante veracidade do caso
+	{ 
+		pthread_cond_wait(&(thisBat->condition), &OesteFila.alteraFila); //Libera mutex e espera sinal
+	}
+	
+	printf("BAT %d W chegou no cruzamento\n", thisBat->id); //Informa que o BAT chegou no cruzamento
+	
+	//check2: //gambi para testes
+	pthread_mutex_lock(&mask_mutex);
+	if (busy_mask & ~(WEST))
+	{
+		pthread_cond_wait(&thisBat->condition, &mask_mutex);
+		//pthread_mutex_unlock(&mask_mutex);
+		//while (1);
+		//pthread_mutex_unlock(&mask_mutex);
+		//goto check2;
+	}
+	pthread_mutex_unlock(&mask_mutex);
+	
+	
+	pthread_mutex_lock(&cruzamento); //Entra na regiao critica do cruzamento para testar variaveis
+	
+	//if (LIMITE);//Condicao para chamar BATMAN ->>>Implementar!
+	
+	printf("BAT %d W saiu no cruzamento\n", thisBat->id); 
+	pthread_mutex_lock(&OesteFila.fim_da_fila);
+	OesteFila.tamanho--;
+	OesteFila.primeiroNo = thisBat->prox;
+	if (thisBat->prox != NULL)
+	{
+		pthread_cond_broadcast(&thisBat->prox->condition);
+	}
+	else//caso onde esse eh o ultimo no da fila
+	{
+		pthread_mutex_lock(&mask_mutex);
+		busy_mask &= ~WEST;
+		pthread_mutex_unlock(&mask_mutex);
+		
+	}
+		
+	pthread_mutex_unlock(&OesteFila.fim_da_fila);
+	
+	
+	pthread_mutex_unlock(&cruzamento);	
+	pthread_mutex_unlock(&OesteFila.alteraFila);//Terminou de mexer na fila
 
 	return NULL;
 }
@@ -250,6 +317,61 @@ void *eastBat(void * tid)
 {
 	Fila * thisBat = (Fila *) tid;
 	
+	pthread_mutex_lock(&LesteFila.alteraFila); //Mutex para acesso a fila do norte, verifica posicao
+	
+	while (LesteFila.primeiroNo != thisBat) //Se nao for o primeiro noh espera ser chamado ->while garante veracidade do caso
+	{ 
+		pthread_cond_wait(&(thisBat->condition), &LesteFila.alteraFila); //Libera mutex e espera sinal
+	}
+	
+	printf("BAT %d E chegou no cruzamento\n", thisBat->id); //Informa que o BAT chegou no cruzamento
+	
+	//check3: //gambi para testes
+	pthread_mutex_lock(&mask_mutex);
+	if (busy_mask & ~(SOUTH | WEST | EAST))
+	{
+		pthread_cond_wait(&thisBat->condition, &mask_mutex);
+		//pthread_mutex_unlock(&mask_mutex);
+		//while(1);
+		//pthread_mutex_unlock(&mask_mutex);
+		//goto check3;
+	}
+	pthread_mutex_unlock(&mask_mutex);
+	
+	
+	pthread_mutex_lock(&cruzamento); //Entra na regiao critica do cruzamento para testar variaveis
+	
+	//if (LIMITE);//Condicao para chamar BATMAN ->>>Implementar!
+	
+	printf("BAT %d E saiu no cruzamento\n", thisBat->id); 
+	pthread_mutex_lock(&LesteFila.fim_da_fila);
+	LesteFila.tamanho--;
+	LesteFila.primeiroNo = thisBat->prox;
+	if (thisBat->prox != NULL)
+	{
+		pthread_cond_broadcast(&thisBat->prox->condition);
+	}
+	else//caso onde esse eh o ultimo no da fila
+	{
+		pthread_mutex_lock(&mask_mutex);
+		busy_mask &= ~EAST;
+		pthread_mutex_unlock(&mask_mutex);
+		
+		if (SulFila.primeiroNo != NULL)
+		{
+			pthread_cond_broadcast(&SulFila.primeiroNo->condition);
+		}
+		else if (OesteFila.primeiroNo != NULL)
+		{
+			pthread_cond_broadcast(&OesteFila.primeiroNo->condition);
+		}
+	}
+		
+	pthread_mutex_unlock(&LesteFila.fim_da_fila);
+	
+	
+	pthread_mutex_unlock(&cruzamento);	
+	pthread_mutex_unlock(&LesteFila.alteraFila);//Terminou de mexer na fila
 
 	return NULL;
 }
@@ -262,8 +384,8 @@ void insereFila(filaCabeca *fila, uint8_t ultimoId) {
 	novo = (Fila *)malloc(sizeof(Fila));
     novo->prox=NULL;
     novo->id=ultimoId;
+	pthread_mutex_lock(&fila->fim_da_fila);//Se lock nao for feito nessa ordem causa dead lock pois BAT bloqueia na ordem contraria.
 	pthread_mutex_lock(&mask_mutex);
-	pthread_mutex_lock(&fila->fim_da_fila);
 	fila->tamanho++;
 	if (fila->ultimoNo != NULL)
 	{
