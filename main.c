@@ -90,7 +90,7 @@ int main(int argc, const char * argv[]) {
         exit(EXIT_FAILURE);
     }
     char sentido;
-	
+	pthread_t *lastE, *lastW, *lastN, *lastS;
 	NorteFila.ultimoNo = SulFila.ultimoNo = LesteFila.ultimoNo = OesteFila.ultimoNo = NULL;
 	NorteFila.primeiroNo = SulFila.primeiroNo = LesteFila.primeiroNo = OesteFila.primeiroNo = NULL;
 	NorteFila.tamanho = SulFila.tamanho = LesteFila.tamanho = OesteFila.tamanho = 0;
@@ -117,6 +117,7 @@ int main(int argc, const char * argv[]) {
             case 'n': {
                 insereFila(&NorteFila, i);
 				pthread_cond_init(&(NorteFila.ultimoNo->condition), NULL);
+				lastN = &NorteFila.ultimoNo->bat;
 				pthread_create(&(NorteFila.ultimoNo->bat),NULL,northBat,(void *) NorteFila.ultimoNo);
 				pthread_mutex_unlock(&NorteFila.fim_da_fila);
                 break;
@@ -124,6 +125,7 @@ int main(int argc, const char * argv[]) {
 			case 'e': {
 				insereFila(&LesteFila, i);
 				pthread_cond_init(&(LesteFila.ultimoNo->condition), NULL);
+				lastE = &LesteFila.ultimoNo->bat;
 				pthread_create(&(LesteFila.ultimoNo->bat),NULL,eastBat,(void *) LesteFila.ultimoNo);
 				pthread_mutex_unlock(&LesteFila.fim_da_fila);
 				break;
@@ -131,6 +133,7 @@ int main(int argc, const char * argv[]) {
 			case 's': {
 				insereFila(&SulFila, i);
 				pthread_cond_init(&(SulFila.ultimoNo->condition), NULL);
+				lastS = &SulFila.ultimoNo->bat;
 				pthread_create(&(SulFila.ultimoNo->bat),NULL,southBat,(void *) SulFila.ultimoNo);
 				pthread_mutex_unlock(&SulFila.fim_da_fila);
 				break;
@@ -138,6 +141,7 @@ int main(int argc, const char * argv[]) {
 			case 'w': {
 				insereFila(&OesteFila, i);
 				pthread_cond_init(&(OesteFila.ultimoNo->condition), NULL);
+				lastW = &OesteFila.ultimoNo->bat;
 				pthread_create(&(OesteFila.ultimoNo->bat),NULL,westBat,(void *) OesteFila.ultimoNo);
 				pthread_mutex_unlock(&OesteFila.fim_da_fila);
 				break;
@@ -150,8 +154,11 @@ int main(int argc, const char * argv[]) {
         }
     }
     //FINALIZA
-	setbuf(stdin,0);
-	getchar();
+	int *retval;
+	if (lastN != NULL)	pthread_join(*lastN, (void*)&retval);
+	if (lastE != NULL)	pthread_join(*lastE, (void*)&retval);
+	if (lastS != NULL)	pthread_join(*lastS, (void*)&retval);
+	if (lastW != NULL)	pthread_join(*lastW, (void*)&retval);
     return 0;
 }
 //RODA
@@ -201,6 +208,7 @@ void *northBat(void * tid)
 	{
 		NorteFila.ultimoNo = NULL;
 	}
+	free(thisBat);
 	pthread_mutex_unlock(&NorteFila.fim_da_fila);
 	
 	pthread_mutex_unlock(&NorteFila.alteraFila);//Terminou de mexer na fila
@@ -249,6 +257,7 @@ void *southBat(void * tid)
 		SulFila.ultimoNo = NULL;
 		//printf("Ultimo da fila em S consumido\n");
 	}
+	free(thisBat);
 	pthread_mutex_unlock(&SulFila.fim_da_fila);
 	
 	pthread_mutex_unlock(&SulFila.alteraFila);//Terminou de mexer na fila
@@ -297,6 +306,7 @@ void *westBat(void * tid)
 		OesteFila.ultimoNo = NULL;
 		//printf("Ultimo da fila em S consumido\n");
 	}
+	free(thisBat);
 	pthread_mutex_unlock(&OesteFila.fim_da_fila);
 	
 	pthread_mutex_unlock(&OesteFila.alteraFila);//Terminou de mexer na fila
@@ -344,6 +354,7 @@ void *eastBat(void * tid)
 		LesteFila.ultimoNo = NULL;
 		//printf("Ultimo da fila em S consumido\n");
 	}
+	free(thisBat);
 	pthread_mutex_unlock(&LesteFila.fim_da_fila);
 	
 	pthread_mutex_unlock(&LesteFila.alteraFila);//Terminou de mexer na fila
