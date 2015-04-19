@@ -150,7 +150,6 @@ int main(int argc, const char * argv[]) {
         }
     }
     //FINALIZA
-	printf("N%dE%dW%dS%d\n",NorteFila.tamanho, LesteFila.tamanho, OesteFila.tamanho, SulFila.tamanho);
 	setbuf(stdin,0);
 	getchar();
     return 0;
@@ -260,12 +259,94 @@ void *westBat(void * tid)
 {
 	Fila * thisBat = (Fila *) tid; //Pega referencia do noh desse BAT
 
+	pthread_mutex_lock(&OesteFila.alteraFila); //Mutex para acesso a fila do norte, verifica posicao
+	while (OesteFila.primeiroNo != thisBat) //Se nao for o primeiro noh espera ser chamado ->while garante veracidade do caso
+	{ 
+		pthread_cond_wait(&(thisBat->condition), &OesteFila.alteraFila); //Libera mutex e espera sinal
+	}
+	pthread_cond_broadcast(&batmanCond);
+	pthread_mutex_lock(&cruzamento); //Entra na regiao critica do cruzamento para testar variaveis
+	printf("BAT %d W chegou no cruzamento\n", thisBat->id); //Informa que o BAT chegou no cruzamento
+	
+	if (OesteFila.tamanho > MAX_SIZE)//Ultrapassa limite, cede a vez ------ DESNECESSARIO???
+	{
+		give_mask |= WEST; //Mascara para indicar que 
+	}
+	want_mask |= WEST; //Ele quer de qq jeito, so perciso do ir pra caso ele possa passar a vez
+	newData++;
+	threadData++;
+	pthread_cond_broadcast(&batmanCond);
+	pthread_cond_wait(&thisBat->condition, &cruzamento);
+	
+	printf("BAT %d W saiu no cruzamento\n", thisBat->id);
+	threadData--;
+	want_mask &= ~(WEST);
+	give_mask &= ~(WEST);
+	pthread_cond_broadcast(&batmanCond);
+	pthread_mutex_unlock(&cruzamento);//Ja saiu do cruzamento
+	
+	pthread_mutex_lock(&OesteFila.fim_da_fila); //Altera o estado da fila, utilizado para nao inserir enquanto remove
+	OesteFila.tamanho--;
+	OesteFila.primeiroNo = thisBat->prox;
+	if (thisBat->prox != NULL)
+	{
+		pthread_cond_broadcast(&thisBat->prox->condition);
+	}
+	else
+	{
+		OesteFila.ultimoNo = NULL;
+		//printf("Ultimo da fila em S consumido\n");
+	}
+	pthread_mutex_unlock(&OesteFila.fim_da_fila);
+	
+	pthread_mutex_unlock(&OesteFila.alteraFila);//Terminou de mexer na fila
+
 	return NULL;
 }
 void *eastBat(void * tid)
 {
 	Fila * thisBat = (Fila *) tid;
+	pthread_mutex_lock(&LesteFila.alteraFila); //Mutex para acesso a fila do norte, verifica posicao
+	while (LesteFila.primeiroNo != thisBat) //Se nao for o primeiro noh espera ser chamado ->while garante veracidade do caso
+	{ 
+		pthread_cond_wait(&(thisBat->condition), &LesteFila.alteraFila); //Libera mutex e espera sinal
+	}
+	pthread_cond_broadcast(&batmanCond);
+	pthread_mutex_lock(&cruzamento); //Entra na regiao critica do cruzamento para testar variaveis
+	printf("BAT %d E chegou no cruzamento\n", thisBat->id); //Informa que o BAT chegou no cruzamento
 	
+	if (LesteFila.tamanho > MAX_SIZE)//Ultrapassa limite, cede a vez
+	{
+		give_mask |= EAST; //Mascara para indicar que 
+	}
+	want_mask |= EAST; //Ele quer de qq jeito, so perciso do ir pra caso ele possa passar a vez
+	newData++;
+	threadData++;
+	pthread_cond_broadcast(&batmanCond);
+	pthread_cond_wait(&thisBat->condition, &cruzamento);
+	
+	printf("BAT %d E saiu no cruzamento\n", thisBat->id);
+	threadData--;
+	want_mask &= ~(EAST);
+	give_mask &= ~(EAST);
+	pthread_cond_broadcast(&batmanCond);
+	pthread_mutex_unlock(&cruzamento);//Ja saiu do cruzamento
+	
+	pthread_mutex_lock(&LesteFila.fim_da_fila); //Altera o estado da fila, utilizado para nao inserir enquanto remove
+	LesteFila.tamanho--;
+	LesteFila.primeiroNo = thisBat->prox;
+	if (thisBat->prox != NULL)
+	{
+		pthread_cond_broadcast(&thisBat->prox->condition);
+	}
+	else
+	{
+		LesteFila.ultimoNo = NULL;
+		//printf("Ultimo da fila em S consumido\n");
+	}
+	pthread_mutex_unlock(&LesteFila.fim_da_fila);
+	
+	pthread_mutex_unlock(&LesteFila.alteraFila);//Terminou de mexer na fila
 	return NULL;
 }
 
@@ -286,10 +367,10 @@ void *batMan(void * tid)
 			{ //Entrando no if o north ou nao vai passar a vez ou é o unico que deseja ir
 				if (want_mask & ~(NORTH))//Houve impasse e ninguem quer passar a vez
 				{
-					printf("IMPASSE: N");
-					if (want_mask & EAST) printf (" e E ");
-					if (want_mask & SOUTH) printf (" e S ");
-					if (want_mask & WEST) printf (" e W ");
+					printf("IMPASSE: N ");
+					if (want_mask & EAST) printf ("e E ");
+					if (want_mask & SOUTH) printf ("e S ");
+					if (want_mask & WEST) printf ("e W ");
 					printf(", sinalizando N para ir\n");
 				}
 				//Nao ha necessidade de definir signalWasTo pois N eh o de maior prioridade
@@ -307,9 +388,9 @@ void *batMan(void * tid)
 			{
 				if (want_mask & ~(EAST | NORTH))//Houve impasse e ninguem quer passar a vez
 				{
-					printf("IMPASSE: E");
-					if (want_mask & SOUTH) printf (" e S ");
-					if (want_mask & WEST) printf (" e W ");
+					printf("IMPASSE: E ");
+					if (want_mask & SOUTH) printf ("e S ");
+					if (want_mask & WEST) printf ("e W ");
 					printf(", sinalizando E para ir\n");
 				}
 				signalWasTo = 'E';
@@ -321,6 +402,7 @@ void *batMan(void * tid)
 			{
 				from = LesteFila.primeiroNo->id;
 				firstToGive = 'E';
+				give_mask &= ~(EAST); //Ja cedeu uma vez, o mesmo bat nao cede de novo
 			}
 		}
 		if (want_mask & SOUTH) //Chega aqui caso o EAST nao queira passar ou ele tenha passado a vez
@@ -329,8 +411,8 @@ void *batMan(void * tid)
 			{
 				if (want_mask & ~(SOUTH | EAST | NORTH))//Houve impasse e ninguem quer passar a vez
 				{
-					printf("IMPASSE: S");
-					if (want_mask & WEST) printf (" e W ");
+					printf("IMPASSE: S ");
+					if (want_mask & WEST) printf ("e W ");
 					printf(", sinalizando S para ir\n");
 				}
 				signalWasTo = 'S';
@@ -342,7 +424,15 @@ void *batMan(void * tid)
 			{
 				from = SulFila.primeiroNo->id;
 				firstToGive = 'S';
+				give_mask &= ~(SOUTH); //Ja cedeu uma vez, o mesmo bat nao cede de novo
 			}
+		}
+		if (want_mask & WEST) //Chegar aqui implica que todos os outros ou nao tem BAT no cruzamento ou passaram a vez
+		{
+			signalWasTo = 'W';
+			to = OesteFila.primeiroNo->id;
+			pthread_cond_broadcast(&OesteFila.primeiroNo->condition);
+			goto fimDoLoop;
 		}
 		printf("Nao Entrou em nenhum :(\n");
 		fimDoLoop:
