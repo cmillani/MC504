@@ -17,6 +17,7 @@
 #include <pthread.h>
 #include <inttypes.h>
 #include <stdlib.h>
+#include <stdbool.h>
 //----------------------------------------------------------------------
 //                      Defines
 //----------------------------------------------------------------------
@@ -24,9 +25,17 @@
 #define SOUTH 1 << 1
 #define EAST 1 << 2
 #define WEST 1 << 3
+
+#define MAX_SIZE 2
 //----------------------------------------------------------------------
 //                Declaração e inicialização de variáveis
 //----------------------------------------------------------------------
+
+//Variaveis do batman
+pthread_mutex_t batmanMutex = PTHREAD_MUTEX_INITIALIZER;
+pthread_cond_t batmanCond = PTHREAD_COND_INITIALIZER;
+
+char calee = 0;
 
 //Variaveis de thread
 pthread_mutex_t cruzamento = PTHREAD_MUTEX_INITIALIZER;
@@ -46,6 +55,7 @@ typedef struct noFila {
 } Fila;
 
 typedef struct cabecaFila {
+	bool shouldContinue;
     Fila *primeiroNo;
     Fila *ultimoNo;
     int tamanho;
@@ -58,6 +68,7 @@ filaCabeca NorteFila, LesteFila, SulFila, OesteFila;
 //                      Declaracao de funcoes
 //----------------------------------------------------------------------
 void insereFila(filaCabeca *fila, uint8_t ultimoId);
+void *batMan(void * tid);
 void *northBat(void * tid);
 void *southBat(void * tid);
 void *westBat(void * tid);
@@ -78,6 +89,7 @@ int main(int argc, const char * argv[]) {
 	NorteFila.ultimoNo = SulFila.ultimoNo = LesteFila.ultimoNo = OesteFila.ultimoNo = NULL;
 	NorteFila.primeiroNo = SulFila.primeiroNo = LesteFila.primeiroNo = OesteFila.primeiroNo = NULL;
 	NorteFila.tamanho = SulFila.tamanho = LesteFila.tamanho = OesteFila.tamanho = 0;
+	NorteFila.shouldContinue = SulFila.shouldContinue = LesteFila.shouldContinue = OesteFila.shouldContinue = true;
 	
 	pthread_mutex_init(&NorteFila.fim_da_fila, NULL);
 	pthread_mutex_init(&SulFila.fim_da_fila, NULL);
@@ -374,6 +386,36 @@ void *eastBat(void * tid)
 	pthread_mutex_unlock(&LesteFila.alteraFila);//Terminou de mexer na fila
 
 	return NULL;
+}
+
+void *batMan(void * tid)
+{
+	while (1)
+	{
+		pthread_mutex_lock(&batmanMutex);
+		pthread_cond_wait(&batmanCond, &batmanMutex);
+		pthread_mutex_unlock(&batmanMutex);
+		switch (calee)
+		{
+			case 'n': {
+				
+			}
+			case 'e': {
+				
+			}
+			case 's': {
+				
+			}
+			case 'w': {
+				
+			}
+			default: {
+				exit(EXIT_FAILURE);
+				break;
+			}
+		}
+	}
+	//return NULL;
 }
 //-----------------------------------------------------------------------
 //                      Auxiliares
