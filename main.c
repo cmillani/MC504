@@ -1,15 +1,40 @@
 //
 //  main.c
 //  MC504_t1
-//
-//  Created by Letícia Gonçalves on 4/13/15.
-//  Copyright (c) 2015 LazyFox e Cadu. All rights reserved.
+//  
+//  Created by Letícia Gonçalves and Carlos Eduardo on 4/13/15.
+//  RA: 
 //
 
-//TODO ---->>>>Botar mutex nos bits da bitmask, fazer batman, controle dos sinais
-//TODO ---->>>>Mutex para fim da fila, liberar nos alocados, verificar os cond_wait e nested locks
-//TODO ---->>>>Verificar ordem dos mutexes, grau de poder, sei la, hierarquia?
-//TODO ---->>>>Usar cond wait para quando passa a vez
+/***********************************************************************
+                          Resumo do programa
+************************************************************************
+O programa itera pela string com os caracteres 'n', 'e', 'w', e 's' passados
+como argumento, cria e inicializa uma variavel do tipo noFila, que contem
+todas informacoes do bat, e inicializa uma thread para cada letra. Existe uma 
+variavel do tipo cabecaFila para cada fila de threads, para facilitar insercao 
+e controle.
+
+Cada thread ao iniciar verifica se ela e a primeira da fila, caso positivo ela
+entra no cruzamento (imprime na tela), altera as bitmasks que o batman le para
+mandar sinais para os bat seguirem e espera o sinal do bat, se negativo, o bat
+espera um sinal do primeiro bat (que sera enviado quando esse for se tornar
+o primeiro da fila).
+
+Ao receber o sinal do batman o bat imprime que esta saindo da fila e atualiza
+as variaveis da fila.
+
+O loop do batman consiste em travar o cruzamento, para garantir a consistencia
+dos dados que ele vai analizar, ler as bitmasks para saber quais sentidos tem 
+bat no cruzamento e quais estao dispostos a ceder a vez. Baseado nessas duas
+mascaras ele envia sinal para o escolhido e imprime uma mensagem caso algum
+bat tenha cedido a vez ou caso tenha ocorrido um impasse.
+
+Foi entendido como impasse a presenca de mais de um bat que nao quer ceder a 
+vez no cruzamento. O criterio para ceder a vez e a fila ultrapassar um tamanho
+MAX_SIZE definido no codigo.
+
+***********************************************************************/
 
 //----------------------------------------------------------------------
 //                      Bibliotecas
@@ -23,11 +48,12 @@
 //----------------------------------------------------------------------
 //                      Defines
 //----------------------------------------------------------------------
+//Relativos aos acessos as bitmasks
 #define NORTH 1 << 0
 #define SOUTH 1 << 1
 #define EAST 1 << 2
 #define WEST 1 << 3
-
+//Tamanho maximo que determina quando passa a vez
 #define MAX_SIZE 2
 //----------------------------------------------------------------------
 //                Declaração e inicialização de variáveis
@@ -85,7 +111,7 @@ void *eastBat(void * tid);
 
 int main(int argc, const char * argv[]) {
 
-    //INICIALIZA
+    //Inicializacao das variaveis
     if(argc<=1){
         exit(EXIT_FAILURE);
     }
@@ -106,14 +132,14 @@ int main(int argc, const char * argv[]) {
 	pthread_mutex_init(&LesteFila.alteraFila, NULL);
 	pthread_mutex_init(&OesteFila.alteraFila, NULL);
 	
+	//Inicia o batman
 	pthread_create(&batman, NULL, batMan, 0);
-	//sleep(1); //Garante inicializacao do batman e estado correto do programa daqui para frente
-    //RESOLVE PROBLEMA
+	
+    //Itera pelo vetor passado como argumento para o programa e cria as threads para cada BAT
     uint8_t i = 0;
     while ((sentido=argv[1][i])!='\0') {
 		i++;
         switch (sentido) {
-			//Depois de inserir inicializar o COND do bat
             case 'n': {
                 insereFila(&NorteFila, i);
 				pthread_cond_init(&(NorteFila.ultimoNo->condition), NULL);
@@ -147,21 +173,22 @@ int main(int argc, const char * argv[]) {
 				break;
 			}
 			
-            default: {
+            default: { //Caractar nao representa nenhum sentido, erro de entrada
 				exit(EXIT_FAILURE);
                 break;
 			}
         }
     }
-    //FINALIZA
+    //Espera as ultimas threads criadas retornarem e 
 	int *retval;
 	if (lastN != NULL)	pthread_join(*lastN, (void*)&retval);
 	if (lastE != NULL)	pthread_join(*lastE, (void*)&retval);
 	if (lastS != NULL)	pthread_join(*lastS, (void*)&retval);
 	if (lastW != NULL)	pthread_join(*lastW, (void*)&retval);
+	
+	//Fim do programa
     return 0;
 }
-//RODA
 
 //-----------------------------------------------------------------------
 //                      Threads
@@ -182,29 +209,29 @@ void *northBat(void * tid)
 	
 	if (NorteFila.tamanho > MAX_SIZE)//Ultrapassa limite, cede a vez
 	{
-		give_mask |= NORTH; //Mascara para indicar que 
+		give_mask |= NORTH; //Mascara que indica bats que podem ceder a vez
 	}
-	want_mask |= NORTH; //Ele quer de qq jeito, so perciso do ir pra caso ele possa passar a vez
-	newData++;
-	threadData++;
-	pthread_cond_broadcast(&batmanCond);
-	pthread_cond_wait(&thisBat->condition, &cruzamento);
+	want_mask |= NORTH; //Todo bat sempre quer passar
+	newData++; //Contador para controle no batman
+	threadData++; //Contador para controle interno
+	pthread_cond_broadcast(&batmanCond); //Acorda batman, caso ele esteja dormindo
+	pthread_cond_wait(&thisBat->condition, &cruzamento); //Espera sinal do batman para sair
 	
 	printf("BAT %d N saiu no cruzamento\n", thisBat->id);
-	threadData--;
-	want_mask &= ~(NORTH);
+	threadData--; //Atualiza contador de controle interno
+	want_mask &= ~(NORTH);//Atualiza masks
 	give_mask &= ~(NORTH);
-	pthread_cond_broadcast(&batmanCond);
+	pthread_cond_broadcast(&batmanCond); //Acorda o batman para escolher o prox bat
 	pthread_mutex_unlock(&cruzamento);//Ja saiu do cruzamento
 	
 	pthread_mutex_lock(&NorteFila.fim_da_fila); //Altera o estado da fila, utilizado para nao inserir enquanto remove
 	NorteFila.tamanho--;
 	NorteFila.primeiroNo = thisBat->prox;
-	if (thisBat->prox != NULL)
+	if (thisBat->prox != NULL) //Nao eh o fim da fila
 	{
 		pthread_cond_broadcast(&thisBat->prox->condition);
 	}
-	else 
+	else //Eh o fim da fila
 	{
 		NorteFila.ultimoNo = NULL;
 	}
@@ -230,7 +257,7 @@ void *southBat(void * tid)
 	
 	if (SulFila.tamanho > MAX_SIZE)//Ultrapassa limite, cede a vez
 	{
-		give_mask |= SOUTH; //Mascara para indicar que 
+		give_mask |= SOUTH; //Mascara que indica bats que podem ceder a vez
 	}
 	want_mask |= SOUTH; //Ele quer de qq jeito, so perciso do ir pra caso ele possa passar a vez
 	newData++;
@@ -279,7 +306,7 @@ void *westBat(void * tid)
 	
 	if (OesteFila.tamanho > MAX_SIZE)//Ultrapassa limite, cede a vez ------ DESNECESSARIO???
 	{
-		give_mask |= WEST; //Mascara para indicar que 
+		give_mask |= WEST; //Mascara que indica bats que podem ceder a vez
 	}
 	want_mask |= WEST; //Ele quer de qq jeito, so perciso do ir pra caso ele possa passar a vez
 	newData++;
@@ -327,7 +354,7 @@ void *eastBat(void * tid)
 	
 	if (LesteFila.tamanho > MAX_SIZE)//Ultrapassa limite, cede a vez
 	{
-		give_mask |= EAST; //Mascara para indicar que 
+		give_mask |= EAST; //Mascara que indica bats que podem ceder a vez
 	}
 	want_mask |= EAST; //Ele quer de qq jeito, so perciso do ir pra caso ele possa passar a vez
 	newData++;
@@ -370,18 +397,17 @@ void *batMan(void * tid)
 		int from = 0, to = 0;
 		pthread_mutex_lock(&cruzamento);//Pega lock do cruzamento para ter controle de tudo e garantir que a situacao atual nao sera alterada
 		while (newData != threadData || newData == 0) pthread_cond_wait(&batmanCond, &cruzamento);
-		//printf("Want > %d Give > %d\n",want_mask, give_mask);
 		newData--;
 		if (want_mask & NORTH) //Verifica se o de maior prioridade deseja passar
 		{
 			if (!((give_mask & NORTH) && (want_mask & ~(NORTH)))) //Verifica se o north vai passar a vez e se ele for verifica se mais algum deseja passar
 			{ //Entrando no if o north ou nao vai passar a vez ou é o unico que deseja ir
-				if (want_mask & ~(NORTH))//Houve impasse e ninguem quer passar a vez
+				if ((want_mask & ~(NORTH)) && !(give_mask))//Houve impasse e alguem nao quer passar a vez
 				{
 					printf("IMPASSE: N ");
-					if (want_mask & EAST) printf ("e E ");
-					if (want_mask & SOUTH) printf ("e S ");
-					if (want_mask & WEST) printf ("e W ");
+					if ((want_mask & EAST) && !(give_mask & EAST)) printf ("e E ");//Se existem outros que querem passar e nao querem ceder a vez, impasse!
+					if ((want_mask & SOUTH) && !(give_mask & SOUTH)) printf ("e S ");
+					if ((want_mask & WEST) && !(give_mask & WEST)) printf ("e W ");
 					printf(", sinalizando N para ir\n");
 				}
 				//Nao ha necessidade de definir signalWasTo pois N eh o de maior prioridade
@@ -397,11 +423,11 @@ void *batMan(void * tid)
 		{
 			if (!((give_mask & EAST) && (want_mask & ~(NORTH | EAST)))) 
 			{
-				if (want_mask & ~(EAST | NORTH))//Houve impasse e ninguem quer passar a vez
+				if ((want_mask & ~(EAST | NORTH)) && !(give_mask))//Houve impasse e ninguem quer passar a vez
 				{
 					printf("IMPASSE: E ");
-					if (want_mask & SOUTH) printf ("e S ");
-					if (want_mask & WEST) printf ("e W ");
+					if ((want_mask & SOUTH) && !(give_mask & SOUTH)) printf ("e S ");
+					if ((want_mask & WEST) && !(give_mask & WEST)) printf ("e W ");
 					printf(", sinalizando E para ir\n");
 				}
 				signalWasTo = 'E';
@@ -420,10 +446,10 @@ void *batMan(void * tid)
 		{
 			if (!((give_mask & SOUTH) && (want_mask & ~(NORTH | EAST | SOUTH)))) 
 			{
-				if (want_mask & ~(SOUTH | EAST | NORTH))//Houve impasse e ninguem quer passar a vez
+				if ((want_mask & ~(SOUTH | EAST | NORTH)) && !(give_mask))//Houve impasse e ninguem quer passar a vez
 				{
 					printf("IMPASSE: S ");
-					if (want_mask & WEST) printf ("e W ");
+					if ((want_mask & WEST) && !(give_mask & WEST)) printf ("e W ");
 					printf(", sinalizando S para ir\n");
 				}
 				signalWasTo = 'S';
