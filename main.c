@@ -85,6 +85,11 @@ typedef struct noFila {
     uint8_t id;
 } Fila;
 
+typedef struct whatToFree {
+	Fila *no;
+	struct whatToFree *prox;
+} whatToFree;
+
 typedef struct cabecaFila {
 	bool shouldContinue;
     Fila *primeiroNo;
@@ -95,6 +100,7 @@ typedef struct cabecaFila {
 }filaCabeca;
 
 filaCabeca NorteFila, LesteFila, SulFila, OesteFila;
+whatToFree nodesToFree, *nodesToFreeEnd;
 //----------------------------------------------------------------------
 //                      Declaracao de funcoes
 //----------------------------------------------------------------------
@@ -117,6 +123,13 @@ int main(int argc, const char * argv[]) {
     }
     char sentido;
 	pthread_t *lastE, *lastW, *lastN, *lastS;
+	lastE = NULL;
+	lastW = NULL;
+	lastN = NULL;
+	lastS = NULL;
+	nodesToFree.prox = NULL;
+	nodesToFreeEnd = &nodesToFree;
+	
 	NorteFila.ultimoNo = SulFila.ultimoNo = LesteFila.ultimoNo = OesteFila.ultimoNo = NULL;
 	NorteFila.primeiroNo = SulFila.primeiroNo = LesteFila.primeiroNo = OesteFila.primeiroNo = NULL;
 	NorteFila.tamanho = SulFila.tamanho = LesteFila.tamanho = OesteFila.tamanho = 0;
@@ -185,7 +198,19 @@ int main(int argc, const char * argv[]) {
 	if (lastE != NULL)	pthread_join(*lastE, (void*)&retval);
 	if (lastS != NULL)	pthread_join(*lastS, (void*)&retval);
 	if (lastW != NULL)	pthread_join(*lastW, (void*)&retval);
-	
+	whatToFree *atual;
+	whatToFree *temp;
+	atual = nodesToFree.prox;
+	while (atual != NULL)
+	{
+		if (atual->no != NULL) 
+		{
+			free(atual->no);
+		}
+		temp = atual;
+		atual = atual->prox;
+		free (temp);
+	}
 	//Fim do programa
     return 0;
 }
@@ -235,7 +260,6 @@ void *northBat(void * tid)
 	{
 		NorteFila.ultimoNo = NULL;
 	}
-	free(thisBat);
 	pthread_mutex_unlock(&NorteFila.fim_da_fila);
 	
 	pthread_mutex_unlock(&NorteFila.alteraFila);//Terminou de mexer na fila
@@ -284,7 +308,6 @@ void *southBat(void * tid)
 		SulFila.ultimoNo = NULL;
 		//printf("Ultimo da fila em S consumido\n");
 	}
-	free(thisBat);
 	pthread_mutex_unlock(&SulFila.fim_da_fila);
 	
 	pthread_mutex_unlock(&SulFila.alteraFila);//Terminou de mexer na fila
@@ -333,7 +356,6 @@ void *westBat(void * tid)
 		OesteFila.ultimoNo = NULL;
 		//printf("Ultimo da fila em S consumido\n");
 	}
-	free(thisBat);
 	pthread_mutex_unlock(&OesteFila.fim_da_fila);
 	
 	pthread_mutex_unlock(&OesteFila.alteraFila);//Terminou de mexer na fila
@@ -381,7 +403,6 @@ void *eastBat(void * tid)
 		LesteFila.ultimoNo = NULL;
 		//printf("Ultimo da fila em S consumido\n");
 	}
-	free(thisBat);
 	pthread_mutex_unlock(&LesteFila.fim_da_fila);
 	
 	pthread_mutex_unlock(&LesteFila.alteraFila);//Terminou de mexer na fila
@@ -489,6 +510,11 @@ void *batMan(void * tid)
 void insereFila(filaCabeca *fila, uint8_t ultimoId) {
     Fila *novo;
 	novo = (Fila *)malloc(sizeof(Fila));
+	nodesToFreeEnd->prox = malloc(sizeof(whatToFree));
+	nodesToFreeEnd = nodesToFreeEnd->prox;
+	nodesToFreeEnd->no = novo;
+	nodesToFreeEnd->prox = NULL;
+	
     novo->prox=NULL;
     novo->id=ultimoId;
 	pthread_mutex_lock(&fila->fim_da_fila);
