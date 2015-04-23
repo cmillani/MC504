@@ -2,8 +2,11 @@
 //  main.c
 //  MC504_t1
 //  
-//  Created by Letícia Gonçalves and Carlos Eduardo on 4/13/15.
-//  RA: 
+//  Created by
+//  Carlos Eduardo Millani RA: 145643
+//  Letícia Gonçalves RA: 146906
+//  on 4/13/15.
+//
 //
 
 /***********************************************************************
